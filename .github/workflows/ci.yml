@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+      - run: go vet ./...
+      - run: go build ./...
+```
+
+Commit: `ci: add GitHub Actions workflow`
+
+---
+
+## Step 12 — Create the v0.1.0 Release
+
+1. In the repo, click **Releases** (right sidebar) → **Create a new release**
+2. **Tag:** `v0.1.0` (create new tag on publish)
+3. **Target:** `main`
+4. **Title:** `v0.1.0 — Initial Release`
+5. **Description:**
+```
+## goragkit v0.1.0
+
+First public release of goragkit — the missing RAG toolkit for Go.
+
+### What's included
+- `document` — core types
+- `chunker` — fixed-size and sentence-aware chunking
+- `embedder` — OpenAI and Ollama adapters
+- `store` — in-memory cosine-similarity vector store
+- `pipeline` — compose index/query in 4 lines
+- `reranker` — keyword boost reranker
+
+### Install
+```
+go get github.com/njchilds90/goragkit@v0.1.0
+```
+
+### Next up
+pgvector, Weaviate and Pinecone adapters, BM25 reranker, metadata filtering.
