@@ -5,7 +5,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/njchilds90/goragkit.svg)](https://pkg.go.dev/github.com/njchilds90/goragkit)
 [![Go Report Card](https://goreportcard.com/badge/github.com/njchilds90/goragkit)](https://goreportcard.com/report/github.com/njchilds90/goragkit)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-v0.1.0-blue)
+![](https://img.shields.io/badge/version-v0.1.0-blue)
 
 Go has no cohesive RAG library. Python has LangChain, LlamaIndex, Haystack. `goragkit` fills that gap with idiomatic, production-ready primitives for building RAG pipelines in Go — suitable for both developers and AI agents calling Go services.
 
@@ -93,4 +93,3 @@ PRs welcome. Please open an issue first for large changes.
 ## License
 
 MIT © njchilds90
-```
