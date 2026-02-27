@@ -3,9 +3,11 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"sync"
 
-	"github.com/YOUR_USERNAME/goragkit/document"
+	"github.com/njchilds90/goragkit/document"
 )
 
 // VectorStore persists and retrieves chunk embeddings.
@@ -34,8 +36,18 @@ func NewMemory() *Memory { return &Memory{} }
 func (m *Memory) Upsert(_ context.Context, chunks []document.Chunk, vectors [][]float64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if len(chunks) != len(vectors) {
+		return fmt.Errorf("mismatched number of chunks (%d) and vectors (%d)", len(chunks), len(vectors))
+	}
+	vecLen := -1
 	for i, c := range chunks {
-		m.entries = append(m.entries, entry{chunk: c, vector: vectors[i]})
+		v := vectors[i]
+		if vecLen == -1 {
+			vecLen = len(v)
+		} else if len(v) != vecLen {
+			return fmt.Errorf("inconsistent vector lengths: expected %d, got %d (for chunk %v)", vecLen, len(v), c)
+		}
+		m.entries = append(m.entries, entry{chunk: c, vector: v})
 	}
 	return nil
 }
@@ -88,16 +100,5 @@ func cosine(a, b []float64) float64 {
 	if normA == 0 || normB == 0 {
 		return 0
 	}
-	return dot / (sqrt(normA) * sqrt(normB))
-}
-
-func sqrt(x float64) float64 {
-	if x <= 0 {
-		return 0
-	}
-	z := x
-	for i := 0; i < 10; i++ {
-		z -= (z*z - x) / (2 * z)
-	}
-	return z
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
 }
