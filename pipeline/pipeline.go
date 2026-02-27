@@ -4,6 +4,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/njchilds90/goragkit/document"
 	"github.com/njchilds90/goragkit/embedder"
@@ -23,6 +24,9 @@ func New(emb embedder.Embedder, vs store.VectorStore) *Pipeline {
 
 // Index embeds each chunk and upserts it into the vector store.
 func (p *Pipeline) Index(ctx context.Context, chunks []document.Chunk) error {
+	if len(chunks) == 0 {
+		return nil
+	}
 	texts := make([]string, len(chunks))
 	for i, c := range chunks {
 		texts[i] = c.Text
@@ -30,6 +34,9 @@ func (p *Pipeline) Index(ctx context.Context, chunks []document.Chunk) error {
 	vecs, err := p.embedder.Embed(ctx, texts)
 	if err != nil {
 		return err
+	}
+	if len(vecs) != len(chunks) {
+		return fmt.Errorf("unexpected number of vectors: got %d want %d", len(vecs), len(chunks))
 	}
 	return p.store.Upsert(ctx, chunks, vecs)
 }
@@ -39,6 +46,9 @@ func (p *Pipeline) Query(ctx context.Context, query string, topK int) ([]documen
 	vecs, err := p.embedder.Embed(ctx, []string{query})
 	if err != nil {
 		return nil, err
+	}
+	if len(vecs) == 0 {
+		return nil, fmt.Errorf("no embedding returned for query")
 	}
 	return p.store.Query(ctx, vecs[0], topK)
 }
