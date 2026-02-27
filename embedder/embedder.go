@@ -61,6 +61,13 @@ func (o *OpenAI) Embed(ctx context.Context, texts []string) ([][]float64, error)
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, err
 	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// Try to surface any API-provided error message.
+		if out.Error != nil {
+			return nil, fmt.Errorf("openai: %s", out.Error.Message)
+		}
+		return nil, fmt.Errorf("openai: unexpected status %d", resp.StatusCode)
+	}
 	if out.Error != nil {
 		return nil, fmt.Errorf("openai: %s", out.Error.Message)
 	}
@@ -111,9 +118,16 @@ func (o *Ollama) Embed(ctx context.Context, texts []string) ([][]float64, error)
 		if err != nil {
 			return nil, err
 		}
+		// Ensure the response body is closed to avoid leaks.
+		defer resp.Body.Close()
+		// Check HTTP status before decoding.
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return nil, fmt.Errorf("ollama: unexpected status %d", resp.StatusCode)
+		}
 		var out ollamaResponse
-		json.NewDecoder(resp.Body).Decode(&out) //nolint:errcheck
-		resp.Body.Close()
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			return nil, err
+		}
 		vecs = append(vecs, out.Embedding)
 	}
 	return vecs, nil
