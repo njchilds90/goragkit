@@ -24,6 +24,19 @@ type Fixed struct {
 // size is the approximate character window; overlap is the number of
 // characters re-included from the previous chunk.
 func NewFixed(size, overlap int) *Fixed {
+	// sanitize inputs to avoid invalid configurations:
+	// - size must be at least 1
+	// - overlap must be non-negative
+	// - overlap should be less than size to avoid zero/negative step
+	if size <= 0 {
+		size = 1
+	}
+	if overlap < 0 {
+		overlap = 0
+	}
+	if overlap >= size {
+		overlap = size - 1
+	}
 	return &Fixed{size: size, overlap: overlap}
 }
 
