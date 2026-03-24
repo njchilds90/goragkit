@@ -5,17 +5,25 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 
 	"github.com/njchilds90/goragkit/document"
+	"github.com/njchilds90/goragkit/rerrors"
 )
+
+// QueryOptions controls retrieval behavior.
+type QueryOptions struct {
+	TopK            int
+	MetadataFilters map[string]string
+}
 
 // VectorStore persists and retrieves chunk embeddings.
 type VectorStore interface {
 	// Upsert stores chunks with their embedding vectors.
 	Upsert(ctx context.Context, chunks []document.Chunk, vectors [][]float64) error
-	// Query returns the topK most similar chunks to the query vector.
-	Query(ctx context.Context, vector []float64, topK int) ([]document.ScoredChunk, error)
+	// Query returns the most similar chunks to the query vector.
+	Query(ctx context.Context, vector []float64, opts QueryOptions) ([]document.ScoredChunk, error)
 }
 
 type entry struct {
@@ -37,57 +45,49 @@ func (m *Memory) Upsert(_ context.Context, chunks []document.Chunk, vectors [][]
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if len(chunks) != len(vectors) {
-		return fmt.Errorf("mismatched number of chunks (%d) and vectors (%d)", len(chunks), len(vectors))
+		return rerrors.Wrap(rerrors.InvalidInput, "memory.upsert", fmt.Sprintf("chunks(%d) != vectors(%d)", len(chunks), len(vectors)), nil)
 	}
-	vecLen := -1
-	for i, c := range chunks {
-		v := vectors[i]
-		if vecLen == -1 {
-			vecLen = len(v)
-		} else if len(v) != vecLen {
-			return fmt.Errorf("inconsistent vector lengths: expected %d, got %d (for chunk %v)", vecLen, len(v), c)
-		}
-		m.entries = append(m.entries, entry{chunk: c, vector: v})
+	for i := range chunks {
+		m.entries = append(m.entries, entry{chunk: chunks[i], vector: vectors[i]})
 	}
 	return nil
 }
 
 // Query implements VectorStore.
-func (m *Memory) Query(_ context.Context, vector []float64, topK int) ([]document.ScoredChunk, error) {
+func (m *Memory) Query(_ context.Context, vector []float64, opts QueryOptions) ([]document.ScoredChunk, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
-	type scored struct {
-		sc    document.ScoredChunk
-		score float64
+	if opts.TopK <= 0 {
+		opts.TopK = 5
 	}
-	results := make([]scored, 0, len(m.entries))
+	results := make([]document.ScoredChunk, 0, len(m.entries))
 	for _, e := range m.entries {
-		s := cosine(vector, e.vector)
-		results = append(results, scored{
-			sc:    document.ScoredChunk{Chunk: e.chunk, Score: s},
-			score: s,
-		})
-	}
-	// partial sort: bubble top-k to front
-	for i := 0; i < topK && i < len(results); i++ {
-		for j := i + 1; j < len(results); j++ {
-			if results[j].score > results[i].score {
-				results[i], results[j] = results[j], results[i]
-			}
+		if !metadataMatch(e.chunk.Metadata, opts.MetadataFilters) {
+			continue
 		}
+		results = append(results, document.ScoredChunk{Chunk: e.chunk, Score: Cosine(vector, e.vector)})
 	}
-	if topK > len(results) {
-		topK = len(results)
+	sort.Slice(results, func(i, j int) bool { return results[i].Score > results[j].Score })
+	if opts.TopK > len(results) {
+		opts.TopK = len(results)
 	}
-	out := make([]document.ScoredChunk, topK)
-	for i := range out {
-		out[i] = results[i].sc
-	}
-	return out, nil
+	return results[:opts.TopK], nil
 }
 
-func cosine(a, b []float64) float64 {
+func metadataMatch(meta map[string]string, filters map[string]string) bool {
+	if len(filters) == 0 {
+		return true
+	}
+	for k, v := range filters {
+		if meta[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
+// Cosine computes cosine similarity between two vectors.
+func Cosine(a, b []float64) float64 {
 	if len(a) != len(b) {
 		return 0
 	}

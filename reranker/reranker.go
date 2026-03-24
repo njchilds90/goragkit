@@ -2,32 +2,28 @@
 package reranker
 
 import (
+	"sort"
 	"strings"
 
 	"github.com/njchilds90/goragkit/document"
+	"github.com/njchilds90/goragkit/retrieval"
 )
 
-// Reranker rescores a slice of ScoredChunks given the original query.
+// Reranker rescored retrieval results given the query.
 type Reranker interface {
 	Rerank(query string, results []document.ScoredChunk) []document.ScoredChunk
 }
 
-// KeywordBoost is a simple reranker that boosts chunks containing query terms.
-type KeywordBoost struct {
-	boost float64
-}
+// KeywordBoost boosts chunks containing query terms.
+type KeywordBoost struct{ boost float64 }
 
 // NewKeywordBoost returns a KeywordBoost reranker.
-// boost is added to the score for each query term found in the chunk.
-func NewKeywordBoost(boost float64) *KeywordBoost {
-	return &KeywordBoost{boost: boost}
-}
+func NewKeywordBoost(boost float64) *KeywordBoost { return &KeywordBoost{boost: boost} }
 
 // Rerank implements Reranker.
 func (k *KeywordBoost) Rerank(query string, results []document.ScoredChunk) []document.ScoredChunk {
 	terms := strings.Fields(strings.ToLower(query))
-	out := make([]document.ScoredChunk, len(results))
-	copy(out, results)
+	out := append([]document.ScoredChunk(nil), results...)
 	for i, r := range out {
 		lower := strings.ToLower(r.Chunk.Text)
 		for _, term := range terms {
@@ -36,13 +32,35 @@ func (k *KeywordBoost) Rerank(query string, results []document.ScoredChunk) []do
 			}
 		}
 	}
-	// sort descending
-	for i := 0; i < len(out); i++ {
-		for j := i + 1; j < len(out); j++ {
-			if out[j].Score > out[i].Score {
-				out[i], out[j] = out[j], out[i]
-			}
-		}
+	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
+	return out
+}
+
+// BM25 reranks based on lexical relevance while preserving vector score signal.
+type BM25 struct{ weight float64 }
+
+// NewBM25 returns BM25 reranker.
+func NewBM25(weight float64) *BM25 {
+	if weight < 0 {
+		weight = 0
 	}
+	if weight > 1 {
+		weight = 1
+	}
+	return &BM25{weight: weight}
+}
+
+// Rerank applies weighted BM25 score fusion.
+func (b *BM25) Rerank(query string, results []document.ScoredChunk) []document.ScoredChunk {
+	chunks := make([]document.Chunk, len(results))
+	for i, r := range results {
+		chunks[i] = r.Chunk
+	}
+	bm := retrieval.BM25(query, chunks)
+	out := append([]document.ScoredChunk(nil), results...)
+	for i := range out {
+		out[i].Score = (1-b.weight)*out[i].Score + b.weight*bm[out[i].Chunk.ID]
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Score > out[j].Score })
 	return out
 }
