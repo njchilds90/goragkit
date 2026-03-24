@@ -9,25 +9,18 @@ import (
 	"github.com/njchilds90/goragkit/document"
 )
 
-// Chunker splits text into a slice of Chunks.
+// Chunker splits text into chunks.
 type Chunker interface {
 	Chunk(text string) []document.Chunk
 }
 
-// Fixed splits text into fixed-size token windows with optional overlap.
+// Fixed splits text into fixed-size rune windows with overlap.
 type Fixed struct {
-	size    int
-	overlap int
+	size, overlap int
 }
 
 // NewFixed returns a Fixed chunker.
-// size is the approximate character window; overlap is the number of
-// characters re-included from the previous chunk.
 func NewFixed(size, overlap int) *Fixed {
-	// sanitize inputs to avoid invalid configurations:
-	// - size must be at least 1
-	// - overlap must be non-negative
-	// - overlap should be less than size to avoid zero/negative step
 	if size <= 0 {
 		size = 1
 	}
@@ -45,19 +38,12 @@ func (f *Fixed) Chunk(text string) []document.Chunk {
 	var chunks []document.Chunk
 	runes := []rune(text)
 	step := f.size - f.overlap
-	if step <= 0 {
-		step = f.size
-	}
 	for i, idx := 0, 0; idx < len(runes); i, idx = i+1, idx+step {
 		end := idx + f.size
 		if end > len(runes) {
 			end = len(runes)
 		}
-		chunks = append(chunks, document.Chunk{
-			ID:    newID(),
-			Text:  string(runes[idx:end]),
-			Index: i,
-		})
+		chunks = append(chunks, document.Chunk{ID: newID(), Text: string(runes[idx:end]), Index: i})
 		if end == len(runes) {
 			break
 		}
@@ -65,14 +51,14 @@ func (f *Fixed) Chunk(text string) []document.Chunk {
 	return chunks
 }
 
-// Sentence splits text on sentence boundaries (". ", "? ", "! ").
-type Sentence struct {
-	maxSize int
-}
+// Sentence splits text on sentence boundaries.
+type Sentence struct{ maxSize int }
 
-// NewSentence returns a Sentence chunker. maxSize controls the soft
-// maximum character length before a new chunk is started.
+// NewSentence returns a Sentence chunker.
 func NewSentence(maxSize int) *Sentence {
+	if maxSize <= 0 {
+		maxSize = 512
+	}
 	return &Sentence{maxSize: maxSize}
 }
 
@@ -87,11 +73,7 @@ func (s *Sentence) Chunk(text string) []document.Chunk {
 		if buf.Len() == 0 {
 			return
 		}
-		chunks = append(chunks, document.Chunk{
-			ID:    newID(),
-			Text:  strings.TrimSpace(buf.String()),
-			Index: idx,
-		})
+		chunks = append(chunks, document.Chunk{ID: newID(), Text: strings.TrimSpace(buf.String()), Index: idx})
 		idx++
 		buf.Reset()
 	}
@@ -105,13 +87,52 @@ func (s *Sentence) Chunk(text string) []document.Chunk {
 	return chunks
 }
 
+// Sliding splits text by tokens with overlap, preserving word boundaries.
+type Sliding struct {
+	window, overlap int
+}
+
+// NewSliding returns a word-aware sliding-window chunker.
+func NewSliding(window, overlap int) *Sliding {
+	if window <= 0 {
+		window = 256
+	}
+	if overlap < 0 {
+		overlap = 0
+	}
+	if overlap >= window {
+		overlap = window - 1
+	}
+	return &Sliding{window: window, overlap: overlap}
+}
+
+// Chunk implements Chunker.
+func (s *Sliding) Chunk(text string) []document.Chunk {
+	words := strings.Fields(text)
+	if len(words) == 0 {
+		return nil
+	}
+	step := s.window - s.overlap
+	out := make([]document.Chunk, 0, len(words)/step+1)
+	for i, idx := 0, 0; idx < len(words); i, idx = i+1, idx+step {
+		end := idx + s.window
+		if end > len(words) {
+			end = len(words)
+		}
+		out = append(out, document.Chunk{ID: newID(), Text: strings.Join(words[idx:end], " "), Index: i})
+		if end == len(words) {
+			break
+		}
+	}
+	return out
+}
+
 func splitOnAny(text string, seps []string) []string {
 	result := []string{text}
 	for _, sep := range seps {
 		var next []string
 		for _, part := range result {
-			split := strings.SplitAfter(part, sep)
-			next = append(next, split...)
+			next = append(next, strings.SplitAfter(part, sep)...)
 		}
 		result = next
 	}
@@ -120,6 +141,6 @@ func splitOnAny(text string, seps []string) []string {
 
 func newID() string {
 	b := make([]byte, 8)
-	rand.Read(b) //nolint:errcheck
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }

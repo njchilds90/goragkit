@@ -1,3 +1,3 @@
 module github.com/njchilds90/goragkit
 
-go 1.21
+go 1.22

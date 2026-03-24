@@ -1,94 +1,121 @@
 # goragkit
 
-> Production-ready Retrieval-Augmented Generation (RAG) toolkit for Go.
+> **The Go-native RAG toolkit for production systems and autonomous agents.**
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/njchilds90/goragkit.svg)](https://pkg.go.dev/github.com/njchilds90/goragkit)
-[![Go Report Card](https://goreportcard.com/badge/github.com/njchilds90/goragkit)](https://goreportcard.com/report/github.com/njchilds90/goragkit)
+[![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-![](https://img.shields.io/badge/version-v0.1.0-blue)
+[![CI](https://img.shields.io/github/actions/workflow/status/njchilds90/goragkit/ci.yml?branch=main)](.github/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](.github/workflows/ci.yml)
+[![Version](https://img.shields.io/badge/version-v0.2.0-blue)](CHANGELOG.md)
 
-Go has no cohesive RAG library. Python has LangChain, LlamaIndex, Haystack. `goragkit` fills that gap with idiomatic, production-ready primitives for building RAG pipelines in Go — suitable for both developers and AI agents calling Go services.
+`goragkit` is built for Go teams that need **LangChain/LlamaIndex-level capability** without Python runtime glue.
 
-## Features
+- ⚡ Fast and memory-efficient primitives.
+- 🧠 AI-agent-friendly interfaces and deterministic JSON outputs.
+- 🧩 Composable architecture: chunking, embeddings, retrieval, reranking, stores, loaders.
+- 🔭 Observability-ready with optional OpenTelemetry tracing.
 
-- **Chunking** — fixed-size, sentence-aware, and sliding-window strategies
-- **Embeddings** — provider-agnostic interface with OpenAI and Ollama adapters
-- **Vector Store** — in-memory store + interface for Pinecone, Weaviate, pgvector adapters
-- **Retrieval Pipeline** — compose chunker → embedder → store → retriever in a few lines
-- **Reranking** — cosine similarity reranker included, BM25 planned
-- **Streaming** — `context.Context` throughout, safe for concurrent agents
+## Why Go needs this
 
-## Install
+Go backends increasingly host LLM applications, but many teams still bridge to Python for RAG orchestration. `goragkit` removes that dependency by providing idiomatic, production-grade RAG APIs for microservices, workers, CLI tools, and autonomous agents.
+
+## Installation
+
 ```bash
-go get github.com/njchilds90/goragkit
+go get github.com/njchilds90/goragkit@v0.2.0
 ```
 
-## Quick Start
+## Quickstart (high-level API)
+
 ```go
-package main
+ctx := context.Background()
+emb := embedder.NewOpenAI(os.Getenv("OPENAI_API_KEY"), "text-embedding-3-small")
+vs := store.NewMemory()
 
-import (
-    "context"
-    "fmt"
+p := goragkit.NewRAGPipeline(emb, vs)
 
-    "github.com/njchilds90/goragkit/chunker"
-    "github.com/njchilds90/goragkit/embedder"
-    "github.com/njchilds90/goragkit/pipeline"
-    "github.com/njchilds90/goragkit/store"
-)
+docs := []document.Document{{ID: "doc-1", Text: "Go is excellent for backend RAG services."}}
+_ = p.IndexDocuments(ctx, docs)
 
-func main() {
-    ctx := context.Background()
-
-    // 1. Chunk your document
-    chunks := chunker.NewFixed(512, 64).Chunk("Your long document text here...")
-
-    // 2. Embed with OpenAI
-    emb := embedder.NewOpenAI("YOUR_API_KEY", "text-embedding-3-small")
-
-    // 3. Store in memory
-    vs := store.NewMemory()
-
-    // 4. Build and run pipeline
-    p := pipeline.New(emb, vs)
-    if err := p.Index(ctx, chunks); err != nil {
-        panic(err)
-    }
-
-    results, err := p.Query(ctx, "What does the document say about X?", 5)
-    if err != nil {
-        panic(err)
-    }
-    for _, r := range results {
-        fmt.Println(r.Score, r.Chunk.Text)
-    }
-}
+results, _ := p.Query(ctx, "Why choose Go for RAG?", retrieval.QueryOptions{TopK: 3})
 ```
 
-## Package Overview
+## Architecture
 
-| Package | Description |
-|---|---|
-| `chunker` | Text splitting strategies |
-| `embedder` | Embedding provider interface + adapters |
-| `store` | Vector store interface + in-memory impl |
-| `pipeline` | High-level index/query orchestration |
-| `reranker` | Post-retrieval scoring |
-| `document` | Document and Chunk types |
+```mermaid
+flowchart LR
+  L[Loader] --> C[Chunker]
+  C --> E[Embedder]
+  E --> V[Vector Store]
+  Q[Query] --> E
+  E --> R[Retriever]
+  V --> R
+  R --> RR[Reranker]
+  RR --> O[Agent/Service JSON output]
+```
 
-## Roadmap
+## CLI
 
-- [ ] pgvector adapter
-- [ ] Weaviate adapter
-- [ ] Pinecone adapter
-- [ ] Anthropic embeddings adapter
-- [ ] BM25 reranker
-- [ ] Metadata filtering
-- [ ] CLI tool for indexing local files
+```bash
+goragkit index ./docs --out .goragkit/index.json
+goragkit query --index .goragkit/index.json --q "How does caching work?" --topk 5
+goragkit serve --index .goragkit/index.json --addr :8080
+```
+
+HTTP `serve` request:
+
+```json
+{"query":"Explain retrieval pipeline","top_k":5}
+```
+
+## Advanced features
+
+- **Vector stores**: in-memory + adapters for Pinecone, Weaviate, pgvector.
+- **Embeddings**: OpenAI, Ollama, Cohere + cache wrapper.
+- **Retrieval**: vector search + optional BM25 hybrid fusion.
+- **Metadata filtering**: first-class query filters.
+- **Document loading**: recursive filesystem loader.
+- **Observability**: pluggable tracer + OpenTelemetry bridge.
+- **Agent ergonomics**: structured errors (`rerrors`) and deterministic command outputs.
+
+## Performance notes
+
+Representative benchmark on `store.Memory` with 5k vectors:
+
+- Query throughput optimized via in-memory cosine scoring and partial-slice sort.
+- Use `go test ./... -bench .` to run local benchmarks.
+
+## Example integrations
+
+- gRPC/HTTP services for enterprise knowledge retrieval
+- Autonomous coding agents that require stable JSON retrieval responses
+- Local desktop tools with offline deterministic embedding via CLI
+
+## Roadmap (post-v0.2.0)
+
+- ANN/HNSW index for ultra-large local corpora
+- Multi-vector / ColBERT-style retrieval
+- Native streaming ingestion pipelines
+- Additional observability exporters
 
 ## Contributing
 
-PRs welcome. Please open an issue first for large changes.
+1. Fork and create a feature branch.
+2. Add tests and docs for every exported API.
+3. Run:
+   ```bash
+   go test ./... -race
+   go test ./... -bench .
+   ```
+4. Open a PR with benchmark or behavior impact notes.
+
+## Ecosystem integrations
+
+Designed to compose well with Go infra repos such as:
+
+- `go-rules` for policy/guardrails
+- `goretry` for robust external API retries
+- `gosymbol` for code intelligence pipelines
 
 ## License
 
